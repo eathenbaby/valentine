@@ -85,14 +85,15 @@ app.use((req, res, next) => {
 
   // Serve on PORT env var (defaults to 5000)
   const port = parseInt(process.env.PORT || "5000", 10);
-  httpServer.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
+
+  // On Windows Node does not support `reusePort` on sockets and attempting to
+  // use it causes ENOTSUP. Only set reusePort when the platform supports it.
+  const listenOptions: any = { port, host: "0.0.0.0" };
+  if (process.platform !== "win32") {
+    listenOptions.reusePort = true;
+  }
+
+  httpServer.listen(listenOptions, () => {
+    log(`serving on port ${port}`);
+  });
 })();
