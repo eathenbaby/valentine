@@ -1,0 +1,168 @@
+Role:
+You are a senior full-stack developer + product designer + growth hacker.
+
+Objective:
+Build a viral Valentine confession website where admins generate shareable confession links, and users send those links to their crushes. The crush opens the link and experiences a cute, meme-filled Valentine proposal page.
+
+🧠 Core Concept (READ CAREFULLY)
+
+People DO NOT enter their crush’s name themselves
+
+Instead:
+
+A user submits their own name (the sender)
+
+The system generates a unique Valentine confession link
+
+That link is shared to their crush
+
+The crush opens the link and sees:
+
+“Hey 👀
+Someone has a crush on you…
+Will you be my Valentine? 💕”
+
+Sender identity stays hidden unless revealed later.
+
+🔁 Exact Flow
+1️⃣ Admin / Submission Flow
+
+Admin dashboard or simple form:
+
+Field: Sender Name
+
+Optional: sender Instagram handle / phone (internal use)
+
+On submit:
+
+Generate a unique confession ID
+
+Create a shareable URL like:
+
+/v/abc123
+
+
+Admin sends the link to the sender
+
+2️⃣ Crush Experience (Main Page)
+
+When the crush opens the link:
+
+Cutesy animated Valentine page
+
+Message example:
+
+Hey you 🥺💘  
+Someone thinks you’re adorable…
+
+Will you be my Valentine?
+
+
+NO sender name shown initially
+
+😏 Interactive Meme Features (MANDATORY)
+
+Big YES 💕 button
+
+NO 😤 button that:
+
+Runs away on hover
+
+Changes text each time (“You sure?”, “Think again 👀”, “Don’t do me like that 😭”)
+
+YES button:
+
+Grows bigger each time NO is avoided
+
+On click → heart explosion + celebration
+
+🎨 Design & Vibe
+
+Gen-Z, Indian college meme culture
+
+Pastel pinks, reds, soft gradients
+
+Floating hearts, sparkles, emojis
+
+Playful fonts (Comic Sans / rounded / handwritten)
+
+Mobile-first (Instagram browser compatible)
+
+Tone:
+
+Cute, cringe, funny, wholesome, slightly unhinged
+
+💌 Viral Copy Rotation
+
+Rotate funny lines like:
+
+“You > my CGPA fr”
+
+“I’d skip attendance shortage for you”
+
+“You’re my favorite notification”
+
+“Capybaras approve this message 🦫💘”
+
+🛍️ Monetization Layer (IMPORTANT)
+
+After the confession section:
+
+“Make this confession unforgettable 🎁”
+
+Gift cards:
+
+Chocolates
+
+Teddy bear
+
+Love letter
+
+Rose bouquet
+
+CTA:
+“Send this confession with a gift”
+
+(Does not interrupt the confession flow)
+
+⚙️ Tech Requirements
+
+Unique link per confession
+
+Lightweight backend (ID → confession data)
+
+No login required for crush
+
+Works smoothly inside Instagram in-app browser
+
+Screenshot-friendly layout
+
+Scales for Valentine traffic spikes
+
+Stack can be:
+
+React / Next.js
+
+OR no-code (Bubble / Framer)
+
+OR static + serverless
+
+🚀 Output Expectations
+
+Provide:
+
+App architecture
+
+Database schema for confessions
+
+Admin link-generation flow
+
+UI/UX structure
+
+Copy suggestions
+
+Any viral mechanics to increase shares
+
+✨ One-Line Vision
+
+“A Valentine trap disguised as a cute meme.”
