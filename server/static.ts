@@ -10,10 +10,19 @@ export function serveStatic(app: Express) {
     );
   }
 
+  // Serve static files
   app.use(express.static(distPath));
 
-  // fallback to index.html for SPA routing (catch-all for non-API routes)
-  app.get("*", (_req, res) => {
-    res.sendFile(path.resolve(distPath, "index.html"));
+  // SPA fallback - serve index.html for all non-API routes
+  // This must be last, after all API routes are registered
+  app.get("*", (req, res) => {
+    // Only serve HTML for non-API, non-healthcheck routes
+    // API routes should have been matched already
+    if (!req.path.startsWith("/api") && req.path !== "/health") {
+      res.sendFile(path.resolve(distPath, "index.html"));
+    } else {
+      // This shouldn't happen if routes are registered correctly, but just in case
+      res.status(404).json({ error: "Not found" });
+    }
   });
 }
