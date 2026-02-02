@@ -15,12 +15,18 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // Root route - REQUIRED for Railway healthchecks
+  // Railway hits "/" to verify the app is alive
+  app.get("/", (_req, res) => {
+    res.status(200).send("OK");
+  });
+
   // Healthcheck endpoint - responds immediately, no DB required
   app.get("/health", (_req, res) => {
     res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // API routes only - static files will handle root "/" route
+  // API routes only - static files will handle SPA routes
   app.post(api.confessions.create.path, async (req, res) => {
     try {
       const input = api.confessions.create.input.parse(req.body);
