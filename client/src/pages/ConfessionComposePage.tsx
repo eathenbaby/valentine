@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Heart, Sparkles, Loader2, ArrowLeft } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
-import { useNavigate } from "wouter";
+import { useLocation } from "wouter";
 import { useCreateConfession } from "@/hooks/use-confessions";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -23,7 +23,7 @@ const SUBMIT_BUTTONS = [
 ];
 
 export default function ConfessionComposePage() {
-  const navigate = useNavigate();
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const createMutation = useCreateConfession();
   const [createdId, setCreatedId] = useState<string | null>(null);
@@ -33,12 +33,12 @@ export default function ConfessionComposePage() {
   useEffect(() => {
     const stored = sessionStorage.getItem("senderInfo");
     if (!stored) {
-      navigate("/");
+      setLocation("/");
       return;
     }
     setSenderInfo(JSON.parse(stored));
     setSubmitButtonText(SUBMIT_BUTTONS[Math.floor(Math.random() * SUBMIT_BUTTONS.length)]);
-  }, [navigate]);
+  }, [setLocation]);
 
   const form = useForm<ConfessionCompose>({
     resolver: zodResolver(confessionComposeSchema),
@@ -54,7 +54,7 @@ export default function ConfessionComposePage() {
         description: "Please start from the beginning",
         variant: "destructive",
       });
-      navigate("/");
+      setLocation("/");
       return;
     }
 
@@ -122,7 +122,7 @@ export default function ConfessionComposePage() {
         >
           <Button
             variant="ghost"
-            onClick={() => navigate("/")}
+            onClick={() => setLocation("/")}
             className="mb-4 text-gray-600 hover:text-foreground"
           >
             <ArrowLeft className="mr-2 h-4 w-4" />

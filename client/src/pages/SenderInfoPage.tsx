@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Heart, ArrowRight, Lock } from "lucide-react";
 import { motion } from "framer-motion";
 import { useState } from "react";
-import { useNavigate } from "wouter";
+import { useLocation } from "wouter";
 import { FloatingHearts } from "@/components/FloatingHearts";
 import { Sparkles } from "@/components/Sparkles";
 
@@ -22,7 +22,7 @@ const INTENT_OPTIONS = [
 ];
 
 export default function SenderInfoPage() {
-  const navigate = useNavigate();
+  const [, setLocation] = useLocation();
   const [selectedIntent, setSelectedIntent] = useState<string>("");
 
   const form = useForm<SenderInfo>({
@@ -35,7 +35,7 @@ export default function SenderInfoPage() {
 
   const onSubmit = (data: SenderInfo) => {
     sessionStorage.setItem("senderInfo", JSON.stringify(data));
-    navigate("/compose");
+    setLocation("/compose");
   };
 
   return (
