@@ -15,15 +15,15 @@ export function serveStatic(app: Express) {
 
   // SPA fallback - serve index.html for all non-API routes
   // This must be last, after all API routes are registered
-  // Use "/*" instead of "*" for Express 5 compatibility
-  app.get("/*", (req, res) => {
-    // Only serve HTML for non-API, non-healthcheck routes
-    // API routes should have been matched already
-    if (!req.path.startsWith("/api") && req.path !== "/health") {
+  // Use app.use() instead of app.get() for Express 5 compatibility
+  app.use((req, res, next) => {
+    // Only serve HTML for non-API, non-healthcheck, non-static file routes
+    // API routes and static files should have been matched already
+    if (!req.path.startsWith("/api") && req.path !== "/health" && !req.path.startsWith("/assets")) {
       res.sendFile(path.resolve(distPath, "index.html"));
     } else {
-      // This shouldn't happen if routes are registered correctly, but just in case
-      res.status(404).json({ error: "Not found" });
+      // Let Express handle 404s for unmatched routes
+      next();
     }
   });
 }
