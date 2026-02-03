@@ -1,21 +1,20 @@
-import { useEffect, useState } from "react";
-import { useLocation } from "wouter";
+import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "@/lib/supabaseClient";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+import confetti from "canvas-confetti";
+import { useMutation } from "@tanstack/react-query";
 
-type VibeOption = {
-  id: string;
-  label: string;
-  description: string;
-};
+const VIBES = [
+  { id: "coffee", label: "☕ Coffee", desc: "A cup of coffee together" },
+  { id: "movie", label: "🎬 Movie Night", desc: "A movie with you" },
+  { id: "late-night", label: "🌙 Late Night Study", desc: "3AM vibes" },
+  { id: "one-got-away", label: "💔 The One That Got Away", desc: "Could've been..." },
+  { id: "chaos-love", label: "🎪 Chaos Love", desc: "Beautiful chaos" },
+];
 
-const VIBES: VibeOption[] = [
-  { id: "chaos-love", label: "Chaos Love", description: "Unhinged, unfiltered, reckless romance." },
-  { id: "late-night-study", label: "Late Night Study", description: "Library stares and 2AM caffeine plots." },
-  { id: "one-that-got-away", label: "The One That Got Away", description: "If only you stayed after that last text." },
-  { id: "situationship", label: "Situationship Stocks", description: "Your favorite confusing investment." },
+const DEPARTMENTS = [
+  "Physics", "Chemistry", "Biology", "Mathematics",
+  "Commerce", "Economics", "Management", "Psychology",
+  "English", "History", "Philosophy", "Other"
 ];
 
 export default function VaultSubmitPage() {
@@ -208,11 +207,10 @@ export default function VaultSubmitPage() {
                   onClick={() => setSelectedVibe(vibe)}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  className={`relative flex flex-col items-start gap-1 border text-left px-4 py-3 rounded-2xl bg-neutral-950/70 transition-shadow ${
-                    selectedVibe?.id === vibe.id
+                  className={`relative flex flex-col items-start gap-1 border text-left px-4 py-3 rounded-2xl bg-neutral-950/70 transition-shadow ${selectedVibe?.id === vibe.id
                       ? "border-pink-500 shadow-[0_0_40px_rgba(255,45,85,0.45)]"
                       : "border-neutral-800 hover:border-pink-500/60 hover:shadow-[0_0_24px_rgba(255,45,85,0.25)]"
-                  }`}
+                    }`}
                 >
                   <span className="text-xs font-semibold tracking-[0.16em] uppercase text-pink-400">
                     {vibe.label}

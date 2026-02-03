@@ -95,12 +95,13 @@ export const vaultConfessions = pgTable("vault_confessions", {
   authorId: uuid("author_id")
     .notNull()
     .references(() => profiles.id, { onDelete: "cascade" }),
-  vibe: text("vibe").notNull(),
+  vibe: text("vibe").notNull(), // Coffee, Movie, Late Night Study, The One That Got Away, Chaos Love
+  department: text("department").notNull(), // Physics, Chemistry, Commerce, etc.
   shadowName: text("shadow_name").notNull(), // public-facing "Display / Shadow" name
   body: text("body").notNull(),
-  status: text("status").notNull().default("new"), // new | posted | flagged
+  status: text("status").notNull().default("new"), // new | posted | flagged | revealed
   viewCount: integer("view_count").notNull().default(0),
-  department: text("department"),
+  trackingCount: integer("tracking_count").notNull().default(0), // how many people are tracking this reveal
   lastTrackedAt: timestamp("last_tracked_at"),
   createdAt: timestamp("created_at").defaultNow(),
   postedAt: timestamp("posted_at"),
