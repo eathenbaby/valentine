@@ -95,16 +95,32 @@ export const vaultConfessions = pgTable("vault_confessions", {
   authorId: uuid("author_id")
     .notNull()
     .references(() => profiles.id, { onDelete: "cascade" }),
+
+  // REAL IDENTITY (Private - Admin only)
+  senderRealName: text("sender_real_name").notNull(), // Real verified name from OAuth
+  targetCrushName: text("target_crush_name").notNull(), // Who the confession is for
+
+  // CONTENT
   vibe: text("vibe").notNull(), // Coffee, Movie, Late Night Study, The One That Got Away, Chaos Love
   department: text("department").notNull(), // Physics, Chemistry, Commerce, etc.
-  shadowName: text("shadow_name").notNull(), // public-facing "Display / Shadow" name
-  body: text("body").notNull(),
-  status: text("status").notNull().default("new"), // new | posted | flagged | revealed
+  shadowName: text("shadow_name").notNull(), // public-facing "Display / Shadow" name for teasing
+  body: text("body").notNull(), // The actual confession message
+
+  // VALIDATION METADATA
+  validationScore: integer("validation_score").default(100), // 0-100 trust score (name entropy, toxicity, etc)
+  toxicityScore: real("toxicity_score"), // 0.0-1.0 from Perspective API
+  toxicityFlagged: boolean("toxicity_flagged").default(false), // Set if flagged by profanity filter
+
+  // WORKFLOW STATUS
+  status: text("status").notNull().default("pending"), // pending | approved | posted | revealed | rejected
   viewCount: integer("view_count").notNull().default(0),
-  trackingCount: integer("tracking_count").notNull().default(0), // how many people are tracking this reveal
+  trackingCount: integer("tracking_count").notNull().default(0),
   lastTrackedAt: timestamp("last_tracked_at"),
+
+  // METADATA
   createdAt: timestamp("created_at").defaultNow(),
   postedAt: timestamp("posted_at"),
+  reviousConfessionId: varchar("previous_confession_id"), // Link to legacy confessions if migrated
 });
 
 /**
@@ -115,10 +131,22 @@ export const revealSessions = pgTable("reveal_sessions", {
   confessionShortId: varchar("confession_short_id", { length: 16 })
     .notNull()
     .references(() => vaultConfessions.shortId, { onDelete: "cascade" }),
-  viewerId: uuid("viewer_id"), // optional - when reveal is tied to a logged-in viewer
+
+  // VIEWER IDENTITY
+  viewerId: uuid("viewer_id"), // The person trying to reveal (logged in user)
+  viewerEmail: text("viewer_email"), // Optional email for notifications
+
+  // PAYMENT TRACKING
   paymentProvider: text("payment_provider").notNull(), // stripe | upi | test
-  paymentStatus: text("payment_status").notNull().default("pending"), // pending | paid | failed
+  paymentStatus: text("payment_status").notNull().default("pending"), // pending | paid | failed | cancelled
+  paymentId: text("payment_id"), // Stripe session ID or payment reference
   amount: integer("amount"), // smallest currency unit (e.g. cents, paise)
+  paymentProof: text("payment_proof"), // Screenshot or proof URL for manual verification (UPI)
+
+  // REVEAL STATE
+  revealedAt: timestamp("revealed_at"), // When identity was actually revealed
+
+  // METADATA
   createdAt: timestamp("created_at").defaultNow(),
 });
 

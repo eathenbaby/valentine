@@ -9,6 +9,8 @@ import {
 } from "@shared/schema";
 import { nanoid } from "nanoid";
 import { desc, eq } from "drizzle-orm";
+import { validateName } from "./lib/nameValidator";
+import { checkToxicity } from "./lib/profanityFilter";
 
 const ADMIN_TOKEN = process.env.V4ULT_ADMIN_TOKEN;
 
@@ -48,6 +50,7 @@ export async function registerV4ultRoutes(
         avatarUrl,
         vibe,
         shadowName,
+        targetCrushName,
         body,
         department,
       } = req.body as {
@@ -56,15 +59,48 @@ export async function registerV4ultRoutes(
         avatarUrl?: string | null;
         vibe?: string;
         shadowName?: string;
+        targetCrushName?: string;
         body?: string;
         department?: string | null;
       };
 
-      if (!supabaseUserId || !fullName || !vibe || !shadowName || !body) {
-        return res.status(400).json({ message: "Missing required fields" });
+      // Validate required fields
+      if (!supabaseUserId || !fullName || !vibe || !shadowName || !body || !targetCrushName) {
+        return res.status(400).json({
+          message: "Missing required fields. Need: supabaseUserId, fullName, vibe, shadowName, targetCrushName, body"
+        });
       }
 
-      // Ensure profile exists
+      // ===== VALIDATION LAYER =====
+
+      // 1. Validate sender's real name (entropy checks)
+      const nameValidation = validateName(fullName);
+      if (!nameValidation.valid) {
+        return res.status(400).json({
+          message: `Invalid name: ${nameValidation.reason}`
+        });
+      }
+
+      // 2. Validate crush name (entropy checks)
+      const crushNameValidation = validateName(targetCrushName);
+      if (!crushNameValidation.valid) {
+        return res.status(400).json({
+          message: `Invalid crush name: ${crushNameValidation.reason}`
+        });
+      }
+
+      // 3. Check confession for toxicity (Perspective API)
+      const toxicityResult = await checkToxicity(body);
+      if (toxicityResult.toxic) {
+        return res.status(400).json({
+          message: `Your confession contains inappropriate content. Please revise and try again.`,
+          toxicityScore: toxicityResult.toxicityScore,
+        });
+      }
+
+      // ===== PROFILE SETUP =====
+
+      // Ensure profile exists or update
       const [existingProfile] = await db
         .select()
         .from(profiles)
@@ -78,9 +114,9 @@ export async function registerV4ultRoutes(
         });
       }
 
+      // ===== GENERATE SHORT ID =====
+
       let shortId = generateShortId();
-      // Very small loop to avoid collisions
-      // (real solution: unique constraint + retry on error)
       let attempts = 0;
       while (attempts < 5) {
         const existing = await db
@@ -92,13 +128,21 @@ export async function registerV4ultRoutes(
         attempts += 1;
       }
 
+      // ===== CREATE CONFESSION =====
+
       const insert: InsertVaultConfession = {
         shortId,
         authorId: supabaseUserId as any,
+        senderRealName: fullName,
+        targetCrushName,
         vibe,
         shadowName,
         body,
         department: department ?? null,
+        validationScore: nameValidation.validationScore,
+        toxicityScore: toxicityResult.toxicityScore,
+        toxicityFlagged: toxicityResult.toxic,
+        status: "pending", // Admin must approve before posting
       };
 
       const [created] = await db
@@ -106,11 +150,22 @@ export async function registerV4ultRoutes(
         .values(insert)
         .returning();
 
+      // ===== LOG ANALYTICS =====
+
+      await db.insert(analytics).values({
+        eventName: "v4ult_confession_created",
+        metadata: JSON.stringify({
+          shortId: created.shortId,
+          department,
+          toxicityScore: toxicityResult.toxicityScore,
+        }),
+      });
+
       return res.status(201).json({
         id: created.id,
         shortId: created.shortId,
-        vibe: created.vibe,
         shadowName: created.shadowName,
+        message: "Confession submitted successfully! Admin will review and post soon.",
       });
     } catch (error) {
       console.error("[V4ULT] Failed to create confession", error);
@@ -125,16 +180,20 @@ export async function registerV4ultRoutes(
         .select({
           id: vaultConfessions.id,
           shortId: vaultConfessions.shortId,
+          senderRealName: vaultConfessions.senderRealName,
+          targetCrushName: vaultConfessions.targetCrushName,
           vibe: vaultConfessions.vibe,
           shadowName: vaultConfessions.shadowName,
+          body: vaultConfessions.body,
           status: vaultConfessions.status,
           viewCount: vaultConfessions.viewCount,
-          createdAt: vaultConfessions.createdAt,
+          validationScore: vaultConfessions.validationScore,
+          toxicityScore: vaultConfessions.toxicityScore,
+          toxicityFlagged: vaultConfessions.toxicityFlagged,
           department: vaultConfessions.department,
-          fullName: profiles.fullName,
+          createdAt: vaultConfessions.createdAt,
         })
         .from(vaultConfessions)
-        .leftJoin(profiles, eq(vaultConfessions.authorId, profiles.id))
         .orderBy(desc(vaultConfessions.viewCount), desc(vaultConfessions.createdAt));
 
       res.json(rows);
@@ -152,16 +211,18 @@ export async function registerV4ultRoutes(
         .select({
           id: vaultConfessions.id,
           shortId: vaultConfessions.shortId,
+          senderRealName: vaultConfessions.senderRealName,
+          targetCrushName: vaultConfessions.targetCrushName,
           vibe: vaultConfessions.vibe,
           shadowName: vaultConfessions.shadowName,
+          body: vaultConfessions.body,
           status: vaultConfessions.status,
           viewCount: vaultConfessions.viewCount,
+          toxicityScore: vaultConfessions.toxicityScore,
+          department: vaultConfessions.department,
           createdAt: vaultConfessions.createdAt,
-          body: vaultConfessions.body,
-          fullName: profiles.fullName,
         })
         .from(vaultConfessions)
-        .leftJoin(profiles, eq(vaultConfessions.authorId, profiles.id))
         .where(eq(vaultConfessions.shortId, shortId));
 
       if (!row) {
@@ -218,6 +279,40 @@ export async function registerV4ultRoutes(
       });
     } catch (error) {
       console.error("[V4ULT] Failed to handle reveal preview", error);
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  // Validation endpoint: Check if a name is valid (for real-time feedback in UI)
+  app.post("/api/v4ult/validate-name", async (req, res) => {
+    try {
+      const { name } = req.body as { name?: string };
+
+      if (!name) {
+        return res.status(400).json({ message: "Name is required" });
+      }
+
+      const result = validateName(name);
+      return res.json(result);
+    } catch (error) {
+      console.error("[V4ULT] Failed to validate name", error);
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  // Validation endpoint: Check if confession is toxic
+  app.post("/api/v4ult/validate-confession", async (req, res) => {
+    try {
+      const { body } = req.body as { body?: string };
+
+      if (!body) {
+        return res.status(400).json({ message: "Confession body is required" });
+      }
+
+      const result = await checkToxicity(body);
+      return res.json(result);
+    } catch (error) {
+      console.error("[V4ULT] Failed to validate confession", error);
       res.status(500).json({ message: "Internal error" });
     }
   });
