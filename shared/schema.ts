@@ -82,6 +82,7 @@ export const profiles = pgTable("profiles", {
   id: uuid("id").primaryKey(),
   fullName: text("full_name").notNull(),
   avatarUrl: text("avatar_url"),
+  socialLink: text("social_link"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -122,6 +123,10 @@ export const vaultConfessions = pgTable("vault_confessions", {
   createdAt: timestamp("created_at").defaultNow(),
   postedAt: timestamp("posted_at"),
   reviousConfessionId: varchar("previous_confession_id"), // Link to legacy confessions if migrated
+  // PAYMENT / REVEAL
+  paymentStatus: text("payment_status").notNull().default("unpaid"), // unpaid | pending | paid
+  paymentRef: text("payment_ref"),
+  revealCount: integer("reveal_count").notNull().default(0),
 });
 
 /**

@@ -7,12 +7,17 @@ import {
   analytics,
   type InsertVaultConfession,
 } from "@shared/schema";
+import { revealSessions } from "@shared/schema";
 import { nanoid } from "nanoid";
 import { desc, eq } from "drizzle-orm";
 import { validateName } from "./lib/nameValidator";
 import { checkToxicity } from "./lib/profanityFilter";
+import { getUserById } from "./lib/supabaseAdmin";
 
 const ADMIN_TOKEN = process.env.V4ULT_ADMIN_TOKEN;
+const WEBHOOK_URL = process.env.WEBHOOK_URL; // Discord or Telegram webhook
+const paymentCooldowns: Record<string, number> = {}; // IP -> timestamp
+const COOLDOWN_MS = 5000; // 5 second cooldown per IP
 
 function requireAdmin(req: any, res: any, next: any) {
   if (!ADMIN_TOKEN) {
@@ -44,7 +49,7 @@ export async function registerV4ultRoutes(
   // Create / upsert profile + insert vault confession
   app.post("/api/v4ult/confessions", async (req, res) => {
     try {
-      const {
+      let {
         supabaseUserId,
         fullName,
         avatarUrl,
@@ -70,6 +75,24 @@ export async function registerV4ultRoutes(
           message: "Missing required fields. Need: supabaseUserId, fullName, vibe, shadowName, targetCrushName, body"
         });
       }
+
+      // Server-side verification: ensure the supabase user id maps to a real OAuth user
+      const verifiedUser = await getUserById(supabaseUserId as string);
+      if (!verifiedUser) {
+        console.warn("[V4ULT] Supabase service key not present or user not found; rejecting anonymous submission");
+        return res.status(401).json({ message: "User not verified. Ensure server has SUPABASE_SERVICE_ROLE_KEY configured." });
+      }
+
+      // Prefer the authoritative name from Supabase admin if available
+      const authoritativeName = (verifiedUser as any)?.user_metadata?.full_name || (verifiedUser as any)?.email;
+      if (authoritativeName && authoritativeName !== fullName) {
+        // overwrite fullName with verified value to prevent spoofing
+        fullName = authoritativeName;
+      }
+      const authoritativeSocial =
+        (verifiedUser as any)?.user_metadata?.profile_url ||
+        (verifiedUser as any)?.identities?.[0]?.identity_data?.url ||
+        null;
 
       // ===== VALIDATION LAYER =====
 
@@ -111,6 +134,7 @@ export async function registerV4ultRoutes(
           id: supabaseUserId as any,
           fullName,
           avatarUrl: avatarUrl ?? null,
+          socialLink: authoritativeSocial ?? null,
         });
       }
 
@@ -187,6 +211,9 @@ export async function registerV4ultRoutes(
           body: vaultConfessions.body,
           status: vaultConfessions.status,
           viewCount: vaultConfessions.viewCount,
+          paymentStatus: vaultConfessions.paymentStatus,
+          paymentRef: vaultConfessions.paymentRef,
+          revealCount: vaultConfessions.revealCount,
           validationScore: vaultConfessions.validationScore,
           toxicityScore: vaultConfessions.toxicityScore,
           toxicityFlagged: vaultConfessions.toxicityFlagged,
@@ -285,7 +312,13 @@ export async function registerV4ultRoutes(
           shortId: vaultConfessions.shortId,
           vibe: vaultConfessions.vibe,
           viewCount: vaultConfessions.viewCount,
+          senderRealName: vaultConfessions.senderRealName,
+          body: vaultConfessions.body,
+          paymentStatus: vaultConfessions.paymentStatus,
+          paymentRef: vaultConfessions.paymentRef,
+          revealCount: vaultConfessions.revealCount,
           avatarUrl: profiles.avatarUrl,
+          senderSocial: profiles.socialLink,
         })
         .from(vaultConfessions)
         .leftJoin(profiles, eq(vaultConfessions.authorId, profiles.id))
@@ -309,14 +342,129 @@ export async function registerV4ultRoutes(
         metadata: JSON.stringify({ shortId }),
       });
 
+      // If the confession hasn't been paid for, return only the anonymous text and 402
+      if (existing.paymentStatus !== "paid") {
+        return res.status(402).json({
+          shortId: existing.shortId,
+          vibe: existing.vibe,
+          viewCount: (existing.viewCount ?? 0) + 1,
+          avatarUrl: existing.avatarUrl,
+          message: existing.body ?? "Payment required to reveal identity",
+          identity: "LOCKED",
+          price: 99,
+        });
+      }
+
+      // Paid: reveal authoritative identity and social link (only these fields)
       res.json({
         shortId: existing.shortId,
         vibe: existing.vibe,
         viewCount: (existing.viewCount ?? 0) + 1,
         avatarUrl: existing.avatarUrl,
+        identity: existing.senderRealName,
+        socialLink: existing.senderSocial ?? null,
       });
     } catch (error) {
       console.error("[V4ULT] Failed to handle reveal preview", error);
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  // Public: submit payment proof (UPI/Txn ref) for manual verification
+  app.post("/api/v4ult/reveal/:shortId/submit-payment", async (req, res) => {
+    try {
+      const shortId = req.params.shortId;
+      const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0] || req.socket.remoteAddress || 'unknown';
+      const { paymentRef, viewerEmail, paymentProvider, amount } = req.body as {
+        paymentRef?: string;
+        viewerEmail?: string;
+        paymentProvider?: string;
+        amount?: number;
+      };
+
+      if (!paymentRef) {
+        return res.status(400).json({ message: "paymentRef is required" });
+      }
+
+      // Ensure confession exists
+      const [conf] = await db
+        .select({ id: vaultConfessions.id, shortId: vaultConfessions.shortId, senderRealName: vaultConfessions.senderRealName, targetCrushName: vaultConfessions.targetCrushName })
+        .from(vaultConfessions)
+        .where(eq(vaultConfessions.shortId, shortId));
+
+      if (!conf) return res.status(404).json({ message: "Confession not found" });
+
+      // Rate limit: prevent spam from same IP
+      const now = Date.now();
+      const lastSubmit = paymentCooldowns[clientIp] || 0;
+      if (now - lastSubmit < COOLDOWN_MS) {
+        return res.status(429).json({ message: "Too many requests. Please wait a moment." });
+      }
+      paymentCooldowns[clientIp] = now;
+
+      const [session] = await db
+        .insert(revealSessions)
+        .values({
+          confessionShortId: shortId,
+          viewerEmail: viewerEmail ?? null,
+          paymentProvider: paymentProvider ?? "upi",
+          paymentStatus: "pending",
+          paymentId: paymentRef,
+          amount: amount ?? 99,
+        })
+        .returning();
+
+      await db.insert(analytics).values({
+        eventName: "v4ult_payment_submitted",
+        metadata: JSON.stringify({ shortId, paymentRef, viewerEmail }),
+      });
+
+      // Send webhook notification
+      if (WEBHOOK_URL) {
+        const adminUrl = process.env.ADMIN_URL || 'https://yoursite.com/admin/v4ult';
+        const payload = {
+          content: `💰 New Payment Submission!\nAmount: ₹${amount ?? 99}\nRef: ${paymentRef}\nConfession: ${conf.senderRealName} → ${conf.targetCrushName}\nDashboard: ${adminUrl}`,
+        };
+        fetch(WEBHOOK_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }).catch((err) => console.error('[V4ULT] Webhook failed:', err));
+      }
+
+      return res.status(201).json({ message: "Payment submitted", sessionId: session.id });
+    } catch (error) {
+      console.error("[V4ULT] Failed to submit payment proof", error);
+      res.status(500).json({ message: "Internal error" });
+    }
+  });
+
+  // Admin action: mark confession as paid (manual or webhook backed)
+  app.post("/api/v4ult/admin/confessions/:id/mark-paid", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { paymentRef } = req.body as { paymentRef?: string };
+
+      const [existing] = await db
+        .select({ id: vaultConfessions.id, paymentStatus: vaultConfessions.paymentStatus, revealCount: vaultConfessions.revealCount })
+        .from(vaultConfessions)
+        .where(eq(vaultConfessions.id, id as any));
+
+      if (!existing) {
+        return res.status(404).json({ message: "Confession not found" });
+      }
+
+      const [updated] = await db
+        .update(vaultConfessions)
+        .set({ paymentStatus: "paid", paymentRef: paymentRef ?? null, revealCount: (existing.revealCount ?? 0) + 1 })
+        .where(eq(vaultConfessions.id, id as any))
+        .returning();
+
+      await db.insert(analytics).values({ eventName: "v4ult_marked_paid", metadata: JSON.stringify({ confessionId: id, paymentRef }) });
+
+      res.json({ message: "Marked as paid", confession: updated });
+    } catch (error) {
+      console.error("[V4ULT] Failed to mark confession paid", error);
       res.status(500).json({ message: "Internal error" });
     }
   });

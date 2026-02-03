@@ -1,265 +1,135 @@
-import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-
-type RevealPreview = {
-  shortId: string;
-  vibe: string;
-  viewCount: number;
-  trackingCount: number;
-  avatarUrl: string | null;
-};
+import { useEffect, useState } from "react";
+import { useRoute } from "wouter";
+import confetti from "canvas-confetti";
 
 export default function RevealPage() {
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [preview, setPreview] = useState<RevealPreview | null>(null);
-  const [notFound, setNotFound] = useState(false);
-  const [revealed, setRevealed] = useState(false);
+  const [match, params] = useRoute("/reveal/:shortId");
+  const shortId = params?.shortId as string | undefined;
 
-  const normalizedId = input.trim().toUpperCase().replace(/^#/, "");
+  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [paymentRef, setPaymentRef] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!normalizedId) return;
-
+  const fetchPreview = async () => {
+    if (!shortId) return;
     setLoading(true);
-    setNotFound(false);
-    setPreview(null);
-    setRevealed(false);
-
     try {
-      const res = await fetch(`/api/v4ult/reveal/${encodeURIComponent(normalizedId)}`);
-      if (res.status === 404) {
-        setNotFound(true);
+      const res = await fetch(`/api/v4ult/reveal/${shortId}`);
+      if (res.status === 402) {
+        const body = await res.json();
+        setData({ paid: false, ...body });
+        setLoading(false);
         return;
       }
-      if (!res.ok) {
-        return;
-      }
-      const data = (await res.json()) as RevealPreview;
-      setPreview(data);
+      if (!res.ok) throw new Error("Failed to load");
+      const body = await res.json();
+      setData({ paid: true, ...body });
+    } catch (err: any) {
+      setError(err?.message ?? "Unknown error");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUnlock = () => {
-    const phone = import.meta.env.VITE_V4ULT_WHATSAPP_NUMBER as string | undefined;
-    const id = preview?.shortId ?? normalizedId;
-    const text = encodeURIComponent(
-      `I want to unlock #${id}. Sending payment screenshot now.`
-    );
-    const base = phone ? `https://wa.me/${phone}` : "https://wa.me/";
-    window.open(`${base}?text=${text}`, "_blank");
-    setRevealed(true);
+  useEffect(() => {
+    void fetchPreview();
+    const iv = setInterval(() => void fetchPreview(), 8000);
+    return () => clearInterval(iv);
+  }, [shortId]);
+
+  const upiId = import.meta.env.VITE_UPI_ID || "yourupi@bank";
+  const amount = 99;
+  const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=StcpMatrimony&am=${amount}.00&cu=INR&tn=Reveal-${shortId || 'v4ult'}`;
+  const qrUrl = `https://chart.googleapis.com/chart?chs=350x350&cht=qr&chl=${encodeURIComponent(upiLink)}`;
+
+  const handleSubmitPayment = async () => {
+    if (!shortId) return;
+    if (!paymentRef.trim()) return alert("Enter transaction ID");
+    setSubmitting(true);
+    setStatusMessage(null);
+    try {
+      const res = await fetch(`/api/v4ult/reveal/${shortId}/submit-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentRef: paymentRef.trim(), viewerEmail: null, paymentProvider: "upi", amount }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to submit payment proof");
+      }
+      setStatusMessage("Verifying with the Vault... ⏳ Our handlers are checking. Keep this page open!");
+      setData((d: any) => ({ ...d, submitted: true }));
+    } catch (err: any) {
+      setStatusMessage(err?.message ?? "Submission failed");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
+  useEffect(() => {
+    if (data?.paid) {
+      // celebrate when paid
+      confetti({
+        particleCount: 60,
+        spread: 60,
+        origin: { y: 0.4 },
+        colors: ['#FFC1CC', '#FFD6E0', '#FFF5F7'],
+      });
+    }
+  }, [data?.paid]);
+
+  if (!shortId) {
+    return <div className="min-h-screen flex items-center justify-center">Invalid link</div>;
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-8">
-      <div className="relative z-10 w-full max-w-2xl">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-8"
-        >
-          <h1 className="text-5xl font-bold gradient-text mb-2">Track a Secret 💕</h1>
-          <p className="text-gray-700 text-lg">Enter the receipt code and discover who's been thinking about you</p>
-        </motion.div>
+    <div className="min-h-screen bg-gradient-to-b from-pink-50 to-[#FFF5F7] flex items-center justify-center p-6 font-['Fredoka']">
+      <div className="w-full max-w-xl p-6 rounded-[40px] border-4 border-[#FFB7C5] bg-white/70 backdrop-blur-md shadow-[0_20px_40px_rgba(255,182,197,0.3)]">
+        <h1 className="text-center text-3xl mb-4" style={{ fontFamily: 'Pacifico, serif' }}>Someone has a secret for you... 🎀</h1>
 
-        {/* Search Form */}
-        <motion.form
-          onSubmit={handleSearch}
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="glass-card rounded-3xl p-6 border-4 border-pink-300 mb-8"
-        >
-          <label className="block text-sm font-bold text-gray-800 mb-3">Enter V4ULT ID</label>
-          <div className="flex gap-3">
-            <input
-              className="flex-1 p-4 glass-card rounded-2xl border-4 border-pink-300 focus:border-pink-500 focus:outline-none text-lg font-mono input-glow"
-              placeholder="#STC-1234"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-            />
-            <motion.button
-              type="submit"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="px-8 py-4 bg-gradient-to-r from-pink-400 to-pink-600 text-white font-bold rounded-full shadow-lg hover:shadow-xl disabled:opacity-50"
-              disabled={loading}
-            >
-              {loading ? "Searching..." : "Find"}
-            </motion.button>
+        {loading ? (
+          <div className="text-center">Loading…</div>
+        ) : error ? (
+          <div className="text-center text-red-600">Error: {error}</div>
+        ) : data?.paid ? (
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-[#D14D72] mb-2">It was {data.identity} all along! 💖</h2>
+            {data.socialLink && (
+              <a href={data.socialLink} target="_blank" rel="noreferrer" className="inline-block mt-2 px-4 py-2 bg-[#FFC1CC] text-[#6b2744] rounded-full font-semibold">Visit profile</a>
+            )}
           </div>
-        </motion.form>
-
-        {/* Not Found State */}
-        <AnimatePresence>
-          {notFound && (
-            <motion.div
-              key="notfound"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              className="glass-card rounded-3xl p-6 border-4 border-red-300 bg-red-50/40 text-center"
-            >
-              <div className="text-4xl mb-3">🔍</div>
-              <p className="text-red-700 font-bold text-lg">Secret Not Found</p>
-              <p className="text-red-600 text-sm mt-2">Check the ID and try again</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Preview Card */}
-        <AnimatePresence>
-          {preview && (
-            <motion.div
-              key="preview"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="space-y-6"
-            >
-              {/* Header Info */}
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="text-center"
-              >
-                <div className="inline-block glass-card rounded-2xl px-4 py-2 border-2 border-pink-300">
-                  <p className="text-xs font-bold text-gray-700">Receipt ID</p>
-                  <p className="font-mono text-xl font-bold text-pink-600">#{preview.shortId}</p>
-                </div>
-              </motion.div>
-
-              {/* Main Content */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Vibe Card */}
-                <motion.div
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.1 }}
-                  className="glass-card rounded-3xl p-6 border-4 border-pink-300 text-center"
-                >
-                  <p className="text-sm font-bold text-gray-700 mb-2">The Vibe</p>
-                  <p className="text-3xl font-bold text-pink-600">{preview.vibe}</p>
-                </motion.div>
-
-                {/* Tracking Count */}
-                <motion.div
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.1 }}
-                  className="glass-card rounded-3xl p-6 border-4 border-hot-pink text-center bg-pink-50/40"
-                >
-                  <p className="text-sm font-bold text-gray-700 mb-2">People Tracking</p>
-                  <motion.div
-                    animate={{ scale: [1, 1.1, 1] }}
-                    transition={{ repeat: Infinity, duration: 1.5 }}
-                    className="text-4xl font-bold text-pink-600"
-                  >
-                    {preview.trackingCount}
-                  </motion.div>
-                  <p className="text-xs text-gray-600 mt-2">are waiting to find out...</p>
-                </motion.div>
+        ) : (
+          <div className="space-y-6">
+            <div className="text-center">
+              <div className="inline-block mb-3 p-4 bg-white rounded-2xl shadow-lg">
+                <img src={qrUrl} alt="UPI QR" width={260} height={260} />
               </div>
+              <div className="text-sm text-[#6b2744]">Scan to Pay ₹{amount}</div>
+              <div className="flex gap-2 justify-center mt-3">
+                <a href={upiLink} className="px-4 py-2 bg-[#FFC1CC] text-[#6b2744] rounded-full text-sm font-semibold hover:scale-105 active:scale-95 transition-transform">Tap to pay</a>
+                <button onClick={() => { navigator.clipboard.writeText(upiId); alert('UPI ID copied!'); }} className="px-4 py-2 bg-[#FFE4E8] text-[#6b2744] rounded-full text-sm hover:scale-105 active:scale-95 transition-transform">Copy UPI ID</button>
+              </div>
+            </div>
 
-              {/* Heart Frame Profile */}
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="relative glass-card rounded-3xl p-8 border-4 border-pink-300 text-center"
-              >
-                {/* Heart SVG in background */}
-                <svg
-                  className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-pink-300 opacity-30"
-                  width="120"
-                  height="120"
-                  viewBox="0 0 24 24"
-                  fill="currentColor"
-                >
-                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                </svg>
-
-                <div className="relative z-10">
-                  <p className="text-sm font-bold text-gray-700 mb-4">Their Identity (Sealed)</p>
-
-                  {/* Blurred Avatar in Heart Shape */}
-                  <div className="flex justify-center mb-6">
-                    <motion.div
-                      initial={{ scale: 0.8 }}
-                      animate={{ scale: 1 }}
-                      transition={{ type: "spring", stiffness: 100 }}
-                      className="relative w-32 h-32 rounded-full border-4 border-pink-400 overflow-hidden shadow-lg"
-                      style={{
-                        clipPath: "polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)",
-                      }}
-                    >
-                      {preview.avatarUrl ? (
-                        <motion.img
-                          src={preview.avatarUrl}
-                          alt="Blurred profile"
-                          className="w-full h-full object-cover"
-                          style={{ filter: revealed ? "blur(0px)" : "blur(25px)" }}
-                          animate={{ filter: revealed ? "blur(0px)" : "blur(25px)" }}
-                          transition={{ duration: 0.5 }}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-pink-300 to-pink-600 text-white text-5xl">
-                          ?
-                        </div>
-                      )}
-                    </motion.div>
-                  </div>
-
-                  <p className="text-xs text-gray-600 mb-6">
-                    {revealed
-                      ? "Identity revealed!"
-                      : "Their face is sealed behind the V4ULT. Unlock to see who wrote this."}
-                  </p>
-
-                  {!revealed && (
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={handleUnlock}
-                      className="px-8 py-3 bg-gradient-to-r from-hot-pink to-pink-600 text-white font-bold rounded-full shadow-lg hover:shadow-xl"
-                      style={{
-                        boxShadow: "0 0 20px rgba(255, 105, 180, 0.6)",
-                      }}
-                    >
-                      💕 Unlock Identity
-                    </motion.button>
-                  )}
-
-                  {revealed && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.8 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="text-pink-600 font-bold text-lg"
-                    >
-                      Payment sent! Check your WhatsApp for confirmation.
-                    </motion.div>
-                  )}
-                </div>
-              </motion.div>
-
-              {/* Footer Info */}
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.3 }}
-                className="text-center text-xs text-gray-600"
-              >
-                <p>📊 View count: {preview.viewCount}</p>
-                <p className="mt-2 text-gray-500">Admin-only metric</p>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            <div>
+              <label className="block text-sm text-[#6b2744] mb-2">Transaction ID (UTR)</label>
+              <div className="flex gap-2">
+                <input value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} placeholder="12-digit UTR" className="flex-1 px-4 py-3 rounded-full border border-pink-100 font-['Fredoka']" />
+                <button onClick={handleSubmitPayment} disabled={submitting} className="px-6 py-3 bg-[#FFC1CC] rounded-full text-[#6b2744] font-semibold hover:scale-105 active:scale-95 transition-transform disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit'}</button>
+              </div>
+              {data?.submitted && (
+                <p className="mt-2 text-sm text-[#D14D72]">Verifying with the Vault... ⏳ Our handlers are checking. Keep this page open!</p>
+              )}
+              {statusMessage && <p className="mt-2 text-sm text-[#6b2744]">{statusMessage}</p>}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
 
