@@ -10,6 +10,8 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { FloatingHearts } from "@/components/FloatingHearts";
 import { Sparkles } from "@/components/Sparkles";
+import { useEffect } from "react";
+import { Link } from "wouter";
 
 const INTENT_OPTIONS = [
   { emoji: "☕", text: "A cup of coffee together", desc: "Let's chat over lattes" },
@@ -24,6 +26,11 @@ const INTENT_OPTIONS = [
 export default function SenderInfoPage() {
   const [, setLocation] = useLocation();
   const [selectedIntent, setSelectedIntent] = useState<string>("");
+  const [stats, setStats] = useState<{
+    totalSecrets: number;
+    activeTrackers: number;
+    lastRevealAt: string | null;
+  } | null>(null);
 
   const form = useForm<SenderInfo>({
     resolver: zodResolver(senderInfoSchema),
@@ -37,6 +44,20 @@ export default function SenderInfoPage() {
     sessionStorage.setItem("senderInfo", JSON.stringify(data));
     setLocation("/compose");
   };
+
+  useEffect(() => {
+    const loadStats = async () => {
+      try {
+        const res = await fetch("/api/v4ult/stats");
+        if (!res.ok) return;
+        const json = await res.json();
+        setStats(json);
+      } catch {
+        // ignore
+      }
+    };
+    void loadStats();
+  }, []);
 
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 relative overflow-hidden">
@@ -72,6 +93,36 @@ export default function SenderInfoPage() {
             Every love story starts with a brave first step...
           </motion.p>
         </header>
+
+        {stats && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="mt-2 text-[11px] text-gray-600 font-mono bg-white/60 backdrop-blur-sm px-4 py-2 rounded-full border border-pink-100 shadow-sm"
+          >
+            <span className="mr-4">
+              SYSTEM // TOTAL SECRETS ENCRYPTED:{" "}
+              <span className="text-pink-500">{stats.totalSecrets}</span>
+            </span>
+            <span className="mr-4">
+              ACTIVE TRACKERS:{" "}
+              <span className="text-rose-500">{stats.activeTrackers}</span>
+            </span>
+            <span>
+              LAST REVEAL:{" "}
+              <span className="text-gray-800">
+                {stats.lastRevealAt
+                  ? `${Math.max(
+                      1,
+                      Math.floor(
+                        (Date.now() - new Date(stats.lastRevealAt).getTime()) / 60000
+                      )
+                    )} MINUTES AGO`
+                  : "NO SIGNAL"}
+              </span>
+            </span>
+          </motion.div>
+        )}
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -184,14 +235,21 @@ export default function SenderInfoPage() {
           </div>
         </motion.div>
 
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.6 }}
-          className="text-sm text-gray-500 italic text-center mt-4"
-        >
-          Your identity stays secret 🎭
-        </motion.p>
+        <div className="mt-4 flex flex-col items-center gap-1 text-xs text-gray-500">
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.6 }}
+            className="italic text-center"
+          >
+            Your identity stays secret 🎭
+          </motion.p>
+          <Link href="/terms">
+            <a className="underline-offset-4 hover:underline text-[11px] text-gray-600">
+              Read the V4ULT Terms
+            </a>
+          </Link>
+        </div>
       </motion.div>
     </div>
   );

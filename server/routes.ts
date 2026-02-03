@@ -3,6 +3,7 @@ import type { Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
+import { registerV4ultRoutes } from "./v4ultRoutes";
 
 // Basic input sanitization - trim and limit length
 // React automatically escapes HTML, so we just need to validate and trim
@@ -97,6 +98,9 @@ export async function registerRoutes(
     ];
     res.json(gifts);
   });
+
+  // V4ULT-specific API surface
+  await registerV4ultRoutes(httpServer, app);
 
   return httpServer;
 }

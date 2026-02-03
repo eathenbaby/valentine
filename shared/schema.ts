@@ -1,7 +1,19 @@
-import { pgTable, text, timestamp, varchar, boolean } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  text,
+  timestamp,
+  varchar,
+  boolean,
+  uuid,
+  integer,
+} from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+/**
+ * Legacy Valentine's Day confessions table.
+ * Kept for backwards compatibility with the existing flow.
+ */
 export const confessions = pgTable("confessions", {
   id: varchar("id").primaryKey(),
   senderName: text("sender_name").notNull(), // ADMIN ONLY - never exposed to recipient
@@ -58,3 +70,87 @@ export interface GiftOption {
   emoji: string;
   image?: string;
 }
+
+/**
+ * V4ULT: Profiles & Verification
+ *
+ * Each authenticated student gets a profile row tied to an auth user id.
+ * In production this would align with Supabase Auth's user UUID.
+ */
+export const profiles = pgTable("profiles", {
+  id: uuid("id").primaryKey(),
+  fullName: text("full_name").notNull(),
+  avatarUrl: text("avatar_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+/**
+ * V4ULT: Confessions (social stock exchange)
+ *
+ * These are the "vault" submissions, distinct from the legacy confessions above.
+ */
+export const vaultConfessions = pgTable("vault_confessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  shortId: varchar("short_id", { length: 16 }).notNull().unique(), // e.g. STC-721
+  authorId: uuid("author_id")
+    .notNull()
+    .references(() => profiles.id, { onDelete: "cascade" }),
+  vibe: text("vibe").notNull(),
+  shadowName: text("shadow_name").notNull(), // public-facing "Display / Shadow" name
+  body: text("body").notNull(),
+  status: text("status").notNull().default("new"), // new | posted | flagged
+  viewCount: integer("view_count").notNull().default(0),
+  department: text("department"),
+  lastTrackedAt: timestamp("last_tracked_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  postedAt: timestamp("posted_at"),
+});
+
+/**
+ * V4ULT: Reveal / Monetization tracking
+ */
+export const revealSessions = pgTable("reveal_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  confessionShortId: varchar("confession_short_id", { length: 16 })
+    .notNull()
+    .references(() => vaultConfessions.shortId, { onDelete: "cascade" }),
+  viewerId: uuid("viewer_id"), // optional - when reveal is tied to a logged-in viewer
+  paymentProvider: text("payment_provider").notNull(), // stripe | upi | test
+  paymentStatus: text("payment_status").notNull().default("pending"), // pending | paid | failed
+  amount: integer("amount"), // smallest currency unit (e.g. cents, paise)
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+/**
+ * V4ULT: Simple analytics log
+ * For now we just track page/event hits in a cheap way.
+ */
+export const analytics = pgTable("analytics", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventName: text("event_name").notNull(),
+  metadata: text("metadata"), // JSON string; keep loose for now
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// V4ULT zod helpers
+export const insertProfileSchema = createInsertSchema(profiles);
+
+export const insertVaultConfessionSchema = createInsertSchema(vaultConfessions).pick(
+  {
+    shortId: true,
+    authorId: true,
+    vibe: true,
+    shadowName: true,
+    body: true,
+  }
+);
+
+export type Profile = typeof profiles.$inferSelect;
+export type InsertProfile = typeof profiles.$inferInsert;
+
+export type VaultConfession = typeof vaultConfessions.$inferSelect;
+export type InsertVaultConfession = typeof vaultConfessions.$inferInsert;
+
+export type RevealSession = typeof revealSessions.$inferSelect;
+export type AnalyticsEvent = typeof analytics.$inferSelect;
+
