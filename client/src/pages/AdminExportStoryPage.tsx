@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRoute, Link } from "wouter";
-import { toPng } from "html-to-image";
 import { motion } from "framer-motion";
+import type { toPng as ToPngType } from "html-to-image";
 
 type ExportConfession = {
   shortId: string;
@@ -45,6 +45,7 @@ export default function AdminExportStoryPage() {
   const handleDownload = async () => {
     if (!storyRef.current) return;
     try {
+      const { toPng } = await import("html-to-image");
       const dataUrl = await toPng(storyRef.current, {
         cacheBust: true,
         width: 1080,
