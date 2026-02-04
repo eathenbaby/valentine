@@ -1,6 +1,6 @@
 import express from 'express';
 import { z } from 'zod';
-import { PaymentService } from '../services/paymentService';
+import { PaymentService } from '../services/razorpayService';
 import { ensureAdmin } from '../services/auth';
 
 const router = express.Router();
@@ -10,10 +10,10 @@ const router = express.Router();
 // ============================================
 
 /**
- * POST /api/payments/create-reveal-link
- * Create a Stripe payment link for name reveal
+ * POST /api/payments/create-reveal-order
+ * Create a Razorpay payment order for name reveal
  */
-router.post('/create-reveal-link', async (req, res) => {
+router.post('/create-reveal-order', async (req, res) => {
   try {
     const { confessionId, requestId } = req.body;
 
@@ -21,7 +21,7 @@ router.post('/create-reveal-link', async (req, res) => {
       return res.status(400).json({ error: 'Confession ID and Request ID required' });
     }
 
-    // Get reveal request details to create payment link
+    // Get reveal request details to create payment order
     const { db } = await import('../db');
     const { revealRequests } = await import('../../shared/schema');
     const { eq } = await import('drizzle-orm');
@@ -40,7 +40,7 @@ router.post('/create-reveal-link', async (req, res) => {
       return res.status(400).json({ error: 'Payment already processed' });
     }
 
-    const paymentLink = await PaymentService.createRevealPaymentLink({
+    const paymentOrder = await PaymentService.createRevealPaymentOrder({
       confessionId,
       requesterInstagram: revealRequest.requesterInstagram,
       requesterName: revealRequest.requesterName,
@@ -48,59 +48,59 @@ router.post('/create-reveal-link', async (req, res) => {
     });
 
     res.json({
+      orderId: paymentOrder.orderId,
+      paymentUrl: paymentOrder.paymentUrl,
+      paymentId: paymentOrder.paymentId,
+      amount: 3000, // ₹30.00 in paise
+      currency: 'INR',
+      revealRequestId: paymentOrder.revealRequestId,
+    });
+  } catch (error) {
+    console.error('Error creating payment order:', error);
+    res.status(500).json({ error: 'Failed to create payment order' });
+  }
+});
+
+/**
+ * POST /api/payments/create-payment-link
+ * Create a Razorpay payment link for name reveal
+ */
+router.post('/create-payment-link', async (req, res) => {
+  try {
+    const paymentLinkSchema = z.object({
+      confessionId: z.string(),
+      requesterInstagram: z.string(),
+      requesterName: z.string().optional(),
+      requesterEmail: z.string().email().optional(),
+    });
+
+    const validatedData = paymentLinkSchema.parse(req.body);
+
+    const paymentLink = await PaymentService.createPaymentLink(validatedData);
+
+    res.json({
       paymentUrl: paymentLink.paymentUrl,
       paymentId: paymentLink.paymentId,
-      amount: 3000, // $30.00 in cents
-      currency: 'USD',
+      revealRequestId: paymentLink.revealRequestId,
+      amount: 3000,
+      currency: 'INR',
     });
   } catch (error) {
     console.error('Error creating payment link:', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid data', details: error.errors });
+    }
     res.status(500).json({ error: 'Failed to create payment link' });
   }
 });
 
 /**
- * POST /api/payments/create-checkout
- * Create a Stripe checkout session for name reveal
- */
-router.post('/create-checkout', async (req, res) => {
-  try {
-    const checkoutSchema = z.object({
-      confessionId: z.string(),
-      requesterInstagram: z.string(),
-      requesterName: z.string().optional(),
-      requesterEmail: z.string().email().optional(),
-      successUrl: z.string().url().optional(),
-      cancelUrl: z.string().url().optional(),
-    });
-
-    const validatedData = checkoutSchema.parse(req.body);
-
-    const checkoutSession = await PaymentService.createCheckoutSession(validatedData);
-
-    res.json({
-      checkoutUrl: checkoutSession.checkoutUrl,
-      sessionId: checkoutSession.sessionId,
-      revealRequestId: checkoutSession.revealRequestId,
-      amount: 3000,
-      currency: 'USD',
-    });
-  } catch (error) {
-    console.error('Error creating checkout session:', error);
-    if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: 'Invalid data', details: error.errors });
-    }
-    res.status(500).json({ error: 'Failed to create checkout session' });
-  }
-});
-
-/**
  * POST /api/payments/webhook
- * Handle Stripe webhooks
+ * Handle Razorpay webhooks
  */
 router.post('/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
   try {
-    const signature = req.headers['stripe-signature'] as string;
+    const signature = req.headers['x-razorpay-signature'] as string;
     const payload = req.body;
 
     // Verify webhook signature
@@ -109,8 +109,7 @@ router.post('/webhook', express.raw({ type: 'application/json' }), async (req, r
     }
 
     // Parse the event
-    const stripe = require('stripe');
-    const event = stripe.webhooks.constructEvent(payload, signature, process.env.STRIPE_WEBHOOK_SECRET!);
+    const event = JSON.parse(payload);
 
     // Handle the event
     await PaymentService.handleWebhook(event);

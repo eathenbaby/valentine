@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { initializeDatabase } from "./db";
+import { MigrationRunner } from "./migrationRunner";
 
 const app = express();
 const httpServer = createServer(app);
@@ -64,12 +65,25 @@ app.use((req, res, next) => {
   // Register routes first so healthcheck works immediately
   await registerRoutes(httpServer, app);
   
-  // Initialize database in background (non-blocking)
-  initializeDatabase().catch((error) => {
-    console.error("[init] CRITICAL: Database initialization failed:", error);
+  // Initialize database and run migrations
+  try {
+    console.log("[init] Initializing database...");
+    await initializeDatabase();
+    
+    // Check and run migrations if needed
+    const migrationsNeeded = await MigrationRunner.checkMigrations();
+    if (migrationsNeeded) {
+      console.log("[init] Running database migrations...");
+      await MigrationRunner.runMigrations();
+      console.log("[init] Database migrations completed");
+    } else {
+      console.log("[init] Database is up to date");
+    }
+  } catch (error) {
+    console.error("[init] Database initialization failed:", error);
     // Don't crash - let the server start but log the error clearly
     // The first request will fail and show the real error
-  });
+  }
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
