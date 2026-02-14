@@ -79,15 +79,15 @@ async function buildAll() {
   // Build serverless handler for Vercel
   console.log("building serverless handler...");
   await esbuild({
-    entryPoints: ["server/serverless.ts"],
+    entryPoints: ["api/index.ts"],
     platform: "node",
     bundle: true,
-    format: "cjs",
+    format: "esm",
     outfile: "api/index.js",
     define: {
       "process.env.NODE_ENV": '"production"',
     },
-    minify: true,
+    minify: false,
     external: externals,
     logLevel: "info",
   });
