@@ -5,9 +5,9 @@ import {
   profiles,
   vaultConfessions,
   analytics,
+  revealSessions,
   type InsertVaultConfession,
 } from "@shared/schema";
-import { revealSessions } from "@shared/schema";
 import { nanoid } from "nanoid";
 import { desc, eq } from "drizzle-orm";
 import { validateName } from "./lib/nameValidator";
