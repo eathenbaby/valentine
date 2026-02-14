@@ -1,6 +1,7 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, copyFile, mkdir } from "fs/promises";
+import { existsSync } from "fs";
 
 const allowlist = [
   "@google/generative-ai",
@@ -35,6 +36,22 @@ async function buildAll() {
 
   console.log("building client...");
   await viteBuild();
+
+  // Copy garden files to dist/public
+  console.log("copying garden files...");
+  const gardenFiles = [
+    "client/public/garden.html",
+    "client/public/garden-styles.css",
+    "client/public/garden-script.js"
+  ];
+  
+  for (const file of gardenFiles) {
+    if (existsSync(file)) {
+      const filename = file.split("/").pop();
+      await copyFile(file, `dist/public/${filename}`);
+      console.log(`  copied ${filename}`);
+    }
+  }
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
