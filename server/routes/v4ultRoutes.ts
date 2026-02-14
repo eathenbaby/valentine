@@ -1,6 +1,5 @@
 import express from 'express';
 import type { Request, Response } from 'express';
-import { registerV4ultRoutes } from "./v4ultRoutes";
 
 const router = express.Router();
 
