@@ -261,6 +261,85 @@ export interface AdminStats {
 }
 
 // ============================================
+// V4ULT PLATFORM TABLES
+// ============================================
+
+/**
+ * Profiles Table - User profiles for V4ULT platform
+ */
+export const profiles = pgTable("profiles", {
+  id: uuid("id").primaryKey(),
+  fullName: text("full_name").notNull(),
+  avatarUrl: text("avatar_url"),
+  socialLink: text("social_link"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+/**
+ * Vault Confessions Table - Anonymous confessions with reveal mechanism
+ */
+export const vaultConfessions = pgTable("vault_confessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  shortId: text("short_id").notNull().unique(),
+  authorId: uuid("author_id").notNull().references(() => profiles.id, { onDelete: "cascade" }),
+  senderRealName: text("sender_real_name").notNull(),
+  targetCrushName: text("target_crush_name").notNull(),
+  vibe: text("vibe").notNull(),
+  shadowName: text("shadow_name").notNull(),
+  body: text("body").notNull(),
+  department: text("department"),
+  status: text("status").notNull().default("pending"),
+  viewCount: integer("view_count").default(0),
+  paymentStatus: text("payment_status").default("unpaid"),
+  paymentRef: text("payment_ref"),
+  revealCount: integer("reveal_count").default(0),
+  validationScore: integer("validation_score").default(100),
+  toxicityScore: real("toxicity_score").default(0),
+  toxicityFlagged: boolean("toxicity_flagged").default(false),
+  postedAt: timestamp("posted_at"),
+  lastTrackedAt: timestamp("last_tracked_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+/**
+ * Analytics Table - Event tracking for V4ULT platform
+ */
+export const analytics = pgTable("analytics", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventName: text("event_name").notNull(),
+  metadata: text("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+/**
+ * Reveal Sessions Table - Payment tracking for identity reveals
+ */
+export const revealSessions = pgTable("reveal_sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  confessionShortId: text("confession_short_id").notNull(),
+  viewerEmail: text("viewer_email"),
+  paymentProvider: text("payment_provider").notNull(),
+  paymentStatus: text("payment_status").notNull().default("pending"),
+  paymentId: text("payment_id"),
+  amount: integer("amount").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// V4ULT Type Exports
+export type Profile = typeof profiles.$inferSelect;
+export type InsertProfile = typeof profiles.$inferInsert;
+
+export type VaultConfession = typeof vaultConfessions.$inferSelect;
+export type InsertVaultConfession = typeof vaultConfessions.$inferInsert;
+
+export type Analytics = typeof analytics.$inferSelect;
+export type InsertAnalytics = typeof analytics.$inferInsert;
+
+export type RevealSession = typeof revealSessions.$inferSelect;
+export type InsertRevealSession = typeof revealSessions.$inferInsert;
+
+// ============================================
 // LEGACY SCHEMAS (Backwards Compatibility)
 // ============================================
 
