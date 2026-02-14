@@ -2,8 +2,12 @@
   "version": 2,
   "builds": [
     {
-      "src": "package.json",
+      "src": "dist/index.cjs",
       "use": "@vercel/node"
+    },
+    {
+      "src": "dist/public/**",
+      "use": "@vercel/static"
     }
   ],
   "routes": [
@@ -12,28 +16,12 @@
       "dest": "/dist/public/assets/$1"
     },
     {
+      "src": "/(garden.*\\.(html|css|js))",
+      "dest": "/dist/public/$1"
+    },
+    {
       "src": "/favicon.png",
       "dest": "/dist/public/favicon.png"
-    },
-    {
-      "src": "/garden.html",
-      "dest": "/client/public/garden.html"
-    },
-    {
-      "src": "/garden-styles.css",
-      "dest": "/client/public/garden-styles.css"
-    },
-    {
-      "src": "/garden-script.js",
-      "dest": "/client/public/garden-script.js"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "/dist/index.cjs"
-    },
-    {
-      "src": "/health",
-      "dest": "/dist/index.cjs"
     },
     {
       "src": "/(.*)",
